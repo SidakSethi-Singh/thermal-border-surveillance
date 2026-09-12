@@ -1,0 +1,9 @@
+train/
+valid/
+runs/
+verify_out/
+*.mp4
+__pycache__/
+*.pyc
+yolov8n.pt
+desktop.ini

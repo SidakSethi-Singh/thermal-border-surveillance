@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 5
+names: ['bicycle', 'car', 'dog', 'empty', 'person']
+
+roboflow:
+  workspace: rasmalai-qol4g
+  project: thermal-flir-e3dsw
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/rasmalai-qol4g/thermal-flir-e3dsw/dataset/1
