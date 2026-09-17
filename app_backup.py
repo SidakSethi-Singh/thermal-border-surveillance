@@ -139,7 +139,7 @@ def process_video(model, input_path, output_path, conf_threshold=0.15, progress_
     alert_count = 0
 
     for result in model.track(
-        source=input_path, conf=conf_threshold, iou=0.4, persist=True,
+        source=input_path, conf=conf_threshold, persist=True,
         tracker="bytetrack.yaml", stream=True,
     ):
         frame = enhance_thermal(result.orig_img.copy(), clahe)
@@ -243,7 +243,7 @@ if mode == "Image":
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         with st.spinner("Running detection..."):
-            results = model.predict(np.array(image), conf=0.25, iou=0.4)
+            results = model.predict(np.array(image), conf=0.25)
 
         annotated = results[0].plot()[:, :, ::-1]
         st.image(annotated, caption="Detections (all classes)", width="stretch")
