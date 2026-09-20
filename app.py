@@ -5,13 +5,18 @@ import numpy as np
 import cv2
 import tempfile
 import os
+import time
 import subprocess
 import imageio_ffmpeg
 from collections import defaultdict, deque
 
+import av
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+
 st.set_page_config(page_title="Thermal Person Detector", layout="centered")
 
 MODEL_PATH = "best.pt"
+LIVE_MODEL_PATH = "yolov8s.pt"  # general COCO model for the Live Camera tab (auto-downloads)
 
 # ---- movement classification config (same logic as track_analyze.py) ----
 HISTORY_LEN = 15
@@ -34,10 +39,57 @@ SUSPICION = {
     "observing": 0.10,
 }
 
+# ---- Live Camera tab config ----
+LIVE_CONF_THRESHOLD = 0.55         # raised from 0.4 -> fewer false positives (e.g. bag -> person)
+LIVE_INFER_EVERY_N_FRAMES = 2
+LIVE_RESIZE_WIDTH = 640
+LIVE_SPEED_THREAT = 28
+LIVE_SPEED_NORMAL = 6
+LIVE_CROUCH_ASPECT_RATIO = 0.9
+LIVE_CROUCH_MIN_BOX_HEIGHT_FRAC = 0.55  # only trust the crouch/aspect heuristic when most of the body is in frame
+LIVE_GROUP_DISTANCE_PX = 120
+LIVE_TRACK_HISTORY_LEN = 8
+LIVE_TRACK_MATCH_MAX_DIST = 60      # tightened from 80 -> less chance of a duplicate ID
+LIVE_TRACK_STALE_SECONDS = 0.8      # shortened from 1.5 -> stale ghost track drops faster
+COCO_PERSON_CLASS_ID = 0
+LIVE_COLORS_BGR = {
+    "threat": (0, 0, 255),
+    "normal": (0, 210, 255),
+    "safe": (0, 200, 0),
+    "object": (255, 200, 0),
+}
+LIVE_RTC_CONFIGURATION = RTCConfiguration(
+    {
+        "iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            {
+                "urls": ["turn:openrelay.metered.ca:80"],
+                "username": "openrelayproject",
+                "credential": "openrelayproject",
+            },
+            {
+                "urls": ["turn:openrelay.metered.ca:443"],
+                "username": "openrelayproject",
+                "credential": "openrelayproject",
+            },
+            {
+                "urls": ["turn:openrelay.metered.ca:443?transport=tcp"],
+                "username": "openrelayproject",
+                "credential": "openrelayproject",
+            },
+        ]
+    }
+)
+
 
 @st.cache_resource
 def load_model():
     return YOLO(MODEL_PATH)
+
+
+@st.cache_resource
+def load_live_model():
+    return YOLO(LIVE_MODEL_PATH)
 
 
 def enhance_thermal(frame, clahe):
@@ -230,13 +282,164 @@ def process_video(model, input_path, output_path, conf_threshold=0.15, progress_
     return alert_count
 
 
+# =============================================================================
+# Live Camera tab: centroid tracker + movement -> threat/normal/safe
+# =============================================================================
+
+class LivePersonTrack:
+    __slots__ = ("id", "positions", "last_seen", "last_bbox")
+
+    def __init__(self, track_id, cx, cy, bbox, t):
+        self.id = track_id
+        self.positions = deque(maxlen=LIVE_TRACK_HISTORY_LEN)
+        self.positions.append((cx, cy, t))
+        self.last_seen = t
+        self.last_bbox = bbox
+
+    def update(self, cx, cy, bbox, t):
+        self.positions.append((cx, cy, t))
+        self.last_seen = t
+        self.last_bbox = bbox
+
+    def speed_px_per_frame(self):
+        if len(self.positions) < 2:
+            return 0.0
+        (x0, y0, _), (x1, y1, _) = self.positions[-2], self.positions[-1]
+        return ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+
+
+class LiveCentroidTracker:
+    def __init__(self):
+        self.tracks = {}
+        self._next_id = 1
+
+    def _new_id(self):
+        tid = self._next_id
+        self._next_id += 1
+        return tid
+
+    def update(self, detections, t):
+        stale = [tid for tid, tr in self.tracks.items() if t - tr.last_seen > LIVE_TRACK_STALE_SECONDS]
+        for tid in stale:
+            del self.tracks[tid]
+
+        unmatched = list(range(len(detections)))
+        for tid, tr in list(self.tracks.items()):
+            if not unmatched:
+                break
+            last_cx, last_cy, _ = tr.positions[-1]
+            best_j, best_dist = None, LIVE_TRACK_MATCH_MAX_DIST
+            for j in unmatched:
+                cx, cy, _ = detections[j]
+                dist = ((cx - last_cx) ** 2 + (cy - last_cy) ** 2) ** 0.5
+                if dist < best_dist:
+                    best_dist, best_j = dist, j
+            if best_j is not None:
+                cx, cy, bbox = detections[best_j]
+                tr.update(cx, cy, bbox, t)
+                unmatched.remove(best_j)
+
+        for j in unmatched:
+            cx, cy, bbox = detections[j]
+            tid = self._new_id()
+            self.tracks[tid] = LivePersonTrack(tid, cx, cy, bbox, t)
+
+        results = []
+        for tid, tr in self.tracks.items():
+            x1, y1, x2, y2 = tr.last_bbox
+            w, h = max(x2 - x1, 1), max(y2 - y1, 1)
+            results.append((tid, tr.last_bbox, tr.speed_px_per_frame(), h / w))
+        return results
+
+
+def classify_live_person(speed, aspect, group_bump, box_height_frac):
+    # Only trust the crouch/aspect heuristic when most of the body is
+    # actually in frame (full-body CCTV-style shot). A close-up webcam
+    # framing naturally produces a wide/square box for a standing person,
+    # which used to get misread as "crouching".
+    if box_height_frac > LIVE_CROUCH_MIN_BOX_HEIGHT_FRAC and aspect < LIVE_CROUCH_ASPECT_RATIO:
+        return "threat"
+    if speed >= LIVE_SPEED_THREAT:
+        return "threat"
+    if group_bump:
+        return "threat"
+    if speed <= LIVE_SPEED_NORMAL:
+        return "safe"
+    return "normal"
+
+
+class LiveProcessor:
+    def __init__(self):
+        self.model = load_live_model()
+        self.tracker = LiveCentroidTracker()
+        self.frame_count = 0
+        self.last_annotated = None
+
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+        img = frame.to_ndarray(format="bgr24")
+        self.frame_count += 1
+
+        if self.frame_count % LIVE_INFER_EVERY_N_FRAMES != 0 and self.last_annotated is not None:
+            return av.VideoFrame.from_ndarray(self.last_annotated, format="bgr24")
+
+        h0, w0 = img.shape[:2]
+        scale = LIVE_RESIZE_WIDTH / w0
+        small = cv2.resize(img, (LIVE_RESIZE_WIDTH, int(h0 * scale)))
+
+        results = self.model.predict(small, conf=LIVE_CONF_THRESHOLD, verbose=False)[0]
+        t = time.time()
+
+        person_dets, other_boxes = [], []
+        for box in results.boxes:
+            cls_id = int(box.cls[0])
+            conf = float(box.conf[0])
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            x1, y1, x2, y2 = x1 / scale, y1 / scale, x2 / scale, y2 / scale
+            label = self.model.names[cls_id]
+            if cls_id == COCO_PERSON_CLASS_ID:
+                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+                person_dets.append((cx, cy, (x1, y1, x2, y2)))
+            else:
+                other_boxes.append(((x1, y1, x2, y2), label, conf))
+
+        tracked = self.tracker.update(person_dets, t)
+        centers = [((b[0] + b[2]) / 2, (b[1] + b[3]) / 2) for _, b, _, _ in tracked]
+        group_flags = []
+        for i, (cx, cy) in enumerate(centers):
+            grouped = any(
+                i != j and ((cx - ox) ** 2 + (cy - oy) ** 2) ** 0.5 < LIVE_GROUP_DISTANCE_PX
+                for j, (ox, oy) in enumerate(centers)
+            )
+            group_flags.append(grouped)
+
+        annotated = img.copy()
+        for (bbox, label, conf) in other_boxes:
+            x1, y1, x2, y2 = map(int, bbox)
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), LIVE_COLORS_BGR["object"], 2)
+            cv2.putText(annotated, f"{label} {conf:.2f}", (x1, max(y1 - 8, 0)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, LIVE_COLORS_BGR["object"], 2)
+
+        for (tid, bbox, speed, aspect), grouped in zip(tracked, group_flags):
+            x1, y1, x2, y2 = bbox
+            box_height_frac = (y2 - y1) / max(h0, 1)
+            status = classify_live_person(speed, aspect, grouped, box_height_frac)
+            x1, y1, x2, y2 = map(int, bbox)
+            color = LIVE_COLORS_BGR[status]
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+            cv2.putText(annotated, f"person#{tid} [{status.upper()}]",
+                        (x1, max(y1 - 8, 0)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+
+        self.last_annotated = annotated
+        return av.VideoFrame.from_ndarray(annotated, format="bgr24")
+
+
 # ---------------- UI ----------------
 st.title("Thermal Person Detection & Border Surveillance")
-model = load_model()
 
-mode = st.radio("Choose input type", ["Image", "Video"], horizontal=True)
+mode = st.radio("Choose input type", ["Image", "Video", "Live Camera"], horizontal=True)
 
 if mode == "Image":
+    model = load_model()
     st.write("Upload a thermal image to detect people in it.")
     uploaded_file = st.file_uploader("Choose a thermal image", type=["jpg", "jpeg", "png"])
 
@@ -261,7 +464,8 @@ if mode == "Image":
             for i, conf in enumerate(person_confidences):
                 st.write(f"Person {i + 1}: {conf:.2%} confidence")
 
-else:
+elif mode == "Video":
+    model = load_model()
     st.write("Upload a short video to run tracking, movement classification, and alert detection.")
     uploaded_video = st.file_uploader("Choose a video", type=["mp4", "mov", "avi"])
 
@@ -293,3 +497,19 @@ else:
         st.caption("[A]/[B]/[A+B] = simulated virtual camera coverage; [A+B] means confirmed by both overlapping feeds")
 
         os.unlink(input_path)
+
+else:  # Live Camera
+    st.write("Open this page on your phone's browser (via the ngrok HTTPS link) and allow camera access.")
+    st.caption(
+        "Uses a general object model (not the thermal one) so it can detect everyday objects "
+        "like chairs and tables too. Detected people are tagged SAFE / NORMAL / THREAT based on movement."
+    )
+    webrtc_streamer(
+        key="live-camera",
+        mode=WebRtcMode.SENDRECV,
+        rtc_configuration=LIVE_RTC_CONFIGURATION,
+        video_processor_factory=LiveProcessor,
+        media_stream_constraints={"video": True, "audio": False},
+        async_processing=True,
+    )
+    st.caption("🟥 THREAT (fast motion / crouching / group) · 🟨 NORMAL (walking) · 🟩 SAFE (stationary) · 🟦 other objects")
