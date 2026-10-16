@@ -94,3 +94,18 @@ python -m streamlit run app.py
 - `app.py` — Streamlit demo (image and video modes)
 - `make_demo_video.py` — utility to synthesize a demo video from dataset images
 - `data.yaml` — dataset config
+
+- [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23423684.svg)](https://doi.org/10.5281/zenodo.23423684)
+
+## Citation
+If you use this work or codebase, please cite the research paper:
+
+```bibtex
+@misc{sethi2026thermalguard,
+  author       = {Sidak Singh Sethi},
+  title        = {{Autonomous Drone Thermal Surveillance: Edge-Optimized YOLOv8 Detection, ByteTrack Kinematics, and Heuristic Threat Classification for Border Security}},
+  year         = {2026},
+  publisher    = {Zenodo},
+  doi          = {10.5281/zenodo.23423684},
+  url          = {[https://doi.org/10.5281/zenodo.23423684](https://doi.org/10.5281/zenodo.23423684)}
+}
