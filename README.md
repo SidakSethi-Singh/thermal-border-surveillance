@@ -47,17 +47,17 @@ detecting "something is there."
 
 ## Results
 
-- Training: 25 epochs, YOLOv8n, CPU, ~4.7 hours
+- Training: 100 epochs, YOLOv8n, CPU, ~6.5 hours
 - Visually confirmed accurate person/vehicle detection on validation images and real video
   footage (see `/demo_screenshots`)
 - Note: the automated mAP metric reported at the end of training was affected by an unrelated
-  library bug (`polars`) and did not reflect true performance — validated instead via direct
+  library bug (`polars`) and did not reflect true performance validated instead via direct
   visual inspection of predictions on held-out images and video.
 
 ## Honest limitations
 
 - Movement classification is rule-based/heuristic, not a separately trained and validated
-  classifier — a reasonable approach given the time constraints, but not empirically validated
+  classifier  a reasonable approach given the time constraints, but not empirically validated
   against ground-truth behavior labels.
 - Detection confidence is moderate (typically 0.2–0.9), consistent with a small (`yolov8n`)
   model trained briefly on CPU.
@@ -94,3 +94,18 @@ python -m streamlit run app.py
 - `app.py` — Streamlit demo (image and video modes)
 - `make_demo_video.py` — utility to synthesize a demo video from dataset images
 - `data.yaml` — dataset config
+
+- [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23423684.svg)](https://doi.org/10.5281/zenodo.23423684)
+
+## Citation
+If you use this work or codebase, please cite the research paper:
+
+```bibtex
+@misc{sethi2026thermalguard,
+  author       = {Sidak Singh Sethi},
+  title        = {{Autonomous Drone Thermal Surveillance: Edge-Optimized YOLOv8 Detection, ByteTrack Kinematics, and Heuristic Threat Classification for Border Security}},
+  year         = {2026},
+  publisher    = {Zenodo},
+  doi          = {10.5281/zenodo.23423684},
+  url          = {[https://doi.org/10.5281/zenodo.23423684](https://doi.org/10.5281/zenodo.23423684)}
+}
