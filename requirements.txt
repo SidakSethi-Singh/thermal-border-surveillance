@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 av==17.1.0
 imageio-ffmpeg==0.6.0
 numpy==2.5.2
@@ -8,3 +9,18 @@ streamlit-webrtc==0.77.0
 ultralytics==8.4.154
 torch
 torchvision
+=======
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+python-multipart>=0.0.9
+websockets>=12.0
+ultralytics>=8.1.0
+torch
+torchvision
+opencv-python
+imageio-ffmpeg
+numpy
+Pillow
+pydantic
+lap>=0.5.12
+>>>>>>> 05729372 (Update thermal FLIR detection and migrate frontend architecture)

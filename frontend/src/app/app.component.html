@@ -1,0 +1,560 @@
+<div class="apple-app" [attr.data-theme]="currentTheme">
+  <!-- SLEEK TOP NAVBAR -->
+  <header class="app-header">
+    <div class="header-container">
+      <!-- Brand -->
+      <div class="brand-group">
+        <div class="apple-logo-badge">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/>
+            <path d="M12 6a6 6 0 1 0 6 6 6 6 0 0 0-6-6z"/>
+            <circle cx="12" cy="12" r="2"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">Aegis Vision</div>
+          <div class="brand-caption">Thermal Intelligence</div>
+        </div>
+      </div>
+
+      <!-- Segmented Navigation Tabs -->
+      <nav class="segmented-control">
+        <button class="segment-btn" [class.active]="activeTab === 'video'" (click)="setTab('video')">
+          <span class="segment-icon">🎥</span> Video Surveillance
+        </button>
+        <button class="segment-btn" [class.active]="activeTab === 'image'" (click)="setTab('image')">
+          <span class="segment-icon">📷</span> Thermal Image
+        </button>
+        <button class="segment-btn" [class.active]="activeTab === 'live'" (click)="setTab('live')">
+          <span class="segment-icon">📡</span> Live Camera
+        </button>
+      </nav>
+
+      <!-- Right Action Tools -->
+      <div class="header-tools">
+        <!-- Audio Feedback Toggle -->
+        <button class="tool-btn" (click)="soundAlertsEnabled = !soundAlertsEnabled" [title]="soundAlertsEnabled ? 'Sound alerts enabled' : 'Sound alerts muted'">
+          {{ soundAlertsEnabled ? '🔔' : '🔕' }}
+        </button>
+
+        <!-- Theme Switcher (Dark / Light) -->
+        <button class="theme-toggle-btn" (click)="toggleTheme()" [title]="currentTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
+          <span class="theme-icon">{{ currentTheme === 'dark' ? '☀️ Light' : '🌙 Dark' }}</span>
+        </button>
+
+        <!-- Backend Status Pill -->
+        <div class="status-pill" [class.online]="backendOnline">
+          <span class="status-dot"></span>
+          <span>{{ backendOnline ? 'Server Ready' : 'Connecting...' }}</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="main-content">
+
+    <!-- ==================== TAB: VIDEO SURVEILLANCE ==================== -->
+    <section *ngIf="activeTab === 'video'" class="view-section">
+      <div class="content-grid">
+        <!-- Sidebar Controls Card -->
+        <div class="card control-sidebar">
+          <div class="card-title-group">
+            <h2 class="card-title">Video Analysis</h2>
+            <p class="card-subtitle">Upload aerial or perimeter FLIR footage to run automated tracking, behavior classification, and fusion heuristics.</p>
+          </div>
+
+          <!-- Video Dropzone -->
+          <div class="form-item">
+            <label class="control-label">Video Source</label>
+            <div class="upload-dropzone">
+              <input type="file" id="videoInput" accept="video/mp4,video/avi,video/mov" (change)="onVideoFileSelected($event)">
+              <label for="videoInput" class="dropzone-label">
+                <div class="upload-icon-circle">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                </div>
+                <div class="upload-text">
+                  <span class="upload-highlight" *ngIf="!videoFile">Choose footage</span>
+                  <span *ngIf="!videoFile"> or drag & drop</span>
+                  <span class="selected-filename" *ngIf="videoFile">{{ videoFile.name }}</span>
+                </div>
+                <div class="upload-hint">MP4, MOV, or AVI up to 200MB</div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Sensitivity Slider -->
+          <div class="form-item">
+            <div class="slider-label-row">
+              <label class="control-label">Tracking Sensitivity</label>
+              <span class="slider-badge">{{ (videoConfidence * 100).toFixed(0) }}%</span>
+            </div>
+            <input type="range" class="apple-slider" min="0.05" max="0.75" step="0.05" [(ngModel)]="videoConfidence">
+          </div>
+
+          <!-- Dual Camera Overlap Badge -->
+          <div class="fusion-card-apple">
+            <div class="fusion-header">
+              <span class="fusion-dot"></span>
+              <span class="fusion-heading">Dual-Camera Fusion Zone</span>
+            </div>
+            <p class="fusion-body">
+              Target detections in the <strong>35%–65% frame overlap zone</strong> are cross-confirmed by simulated virtual feeds A & B with an elevated confidence multiplier.
+            </p>
+          </div>
+
+          <!-- Primary Submit Button -->
+          <button class="apple-primary-btn" [disabled]="!videoFile || videoLoading" (click)="processVideo()">
+            <span *ngIf="!videoLoading">Analyze Footage</span>
+            <span *ngIf="videoLoading" class="btn-loader-wrap">
+              <span class="apple-spinner"></span> Processing...
+            </span>
+          </button>
+
+          <div *ngIf="videoError" class="apple-error-banner">
+            {{ videoError }}
+          </div>
+        </div>
+
+        <!-- Right Side: Viewport & Results Dashboard -->
+        <div class="card results-panel">
+          <div class="panel-header-row">
+            <div>
+              <h3 class="panel-heading">Surveillance Monitor</h3>
+              <p class="panel-sub">Real-time object trajectory & kinematic behavior breakdown</p>
+            </div>
+
+            <div class="status-indicator-badge" *ngIf="videoStatus" [class.success]="videoStatus.status === 'completed'" [class.busy]="videoStatus.status === 'processing'">
+              {{ videoStatus.status === 'completed' ? 'Analysis Complete' : (videoStatus.status === 'processing' ? 'Processing Footage' : videoStatus.status) }}
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div *ngIf="!videoLoading && !videoResultUrl" class="apple-empty-state">
+            <div class="empty-icon-wrap">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+              </svg>
+            </div>
+            <h4>No Footage Processed</h4>
+            <p>Select a thermal video file on the left and click "Analyze Footage" to start tracking and behavior classification.</p>
+          </div>
+
+          <!-- Processing Progress Bar -->
+          <div *ngIf="videoLoading && videoStatus" class="apple-progress-card">
+            <div class="progress-info-row">
+              <span class="progress-title">Analyzing frame kinematics... (Frame {{ videoStatus.processed_frames }} / {{ videoStatus.total_frames || '?' }})</span>
+              <span class="progress-percentage">{{ videoStatus.progress }}%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" [style.width.%]="videoStatus.progress"></div>
+            </div>
+            <div class="progress-stages">
+              <span class="stage-pill active">CLAHE Enhancement</span>
+              <span class="stage-pill" [class.active]="videoStatus.progress >= 25">ByteTrack Trajectory</span>
+              <span class="stage-pill" [class.active]="videoStatus.progress >= 55">Kinetic Classification</span>
+              <span class="stage-pill" [class.active]="videoStatus.progress >= 85">Dual-Camera Fusion</span>
+              <span class="stage-pill" [class.active]="videoStatus.progress >= 95">Final Transcoding</span>
+            </div>
+          </div>
+
+          <!-- COMPLETED RESULTS VIEW -->
+          <div *ngIf="videoResultUrl && videoStatus" class="results-container">
+            <!-- Apple-Style Security Alert Hero Banner -->
+            <div class="security-banner" [class.has-alerts]="videoStatus.alert_count > 0" [class.all-clear]="videoStatus.alert_count === 0">
+              <div class="banner-icon-bubble">
+                <span>{{ videoStatus.alert_count > 0 ? '⚠️' : '✓' }}</span>
+              </div>
+              <div class="banner-text">
+                <div class="banner-title">
+                  {{ videoStatus.alert_count > 0 ? 'Confirmed Security Alerts' : 'All Clear — Normal Activity' }}
+                </div>
+                <div class="banner-desc">
+                  {{ videoStatus.alert_count > 0 
+                     ? (videoStatus.alert_count + ' sustained suspicious behavior frames confirmed across targets.') 
+                     : 'No confirmed anomalous behavior detected. Routine walking and stationary thermal signatures only.' }}
+                </div>
+              </div>
+              <div class="banner-metric" *ngIf="videoStatus.alert_count > 0">
+                <span class="metric-big">{{ videoStatus.alert_count }}</span>
+                <span class="metric-caption">Alert Frames</span>
+              </div>
+            </div>
+
+            <!-- Video Player with Smooth Apple Glass Controls -->
+            <div class="video-container">
+              <video #surveillanceVideo [src]="videoResultUrl" controls autoplay loop class="apple-video-player"></video>
+              <div class="video-toolbar">
+                <div class="toolbar-speed">
+                  <span class="speed-label">Playback Speed</span>
+                  <div class="speed-pill-group">
+                    <button class="speed-pill" [class.active]="currentPlaybackSpeed === 0.5" (click)="setPlaybackSpeed(0.5)">0.5x</button>
+                    <button class="speed-pill" [class.active]="currentPlaybackSpeed === 1.0" (click)="setPlaybackSpeed(1.0)">1.0x</button>
+                    <button class="speed-pill" [class.active]="currentPlaybackSpeed === 2.0" (click)="setPlaybackSpeed(2.0)">2.0x</button>
+                  </div>
+                </div>
+                <a [href]="videoResultUrl" download="annotated_surveillance.mp4" class="apple-download-btn">
+                  Download Video ↗
+                </a>
+              </div>
+            </div>
+
+            <!-- BEHAVIORAL CLASSIFICATION SUMMARY -->
+            <div class="section-block" *ngIf="videoStatus.classification_breakdown">
+              <div class="section-title-clean">Behavioral Classification Breakdown</div>
+              <div class="classification-cards">
+                <div class="stat-card">
+                  <div class="stat-top">
+                    <span class="stat-tag tag-crouch">Crouching / Crawling</span>
+                    <span class="stat-icon">🧎</span>
+                  </div>
+                  <div class="stat-number accent-red">{{ videoStatus.classification_breakdown.crouching }}</div>
+                  <div class="stat-caption">Aspect ratio drop &lt; 0.60</div>
+                </div>
+
+                <div class="stat-card">
+                  <div class="stat-top">
+                    <span class="stat-tag tag-group">Group Movement</span>
+                    <span class="stat-icon">👥</span>
+                  </div>
+                  <div class="stat-number accent-amber">{{ videoStatus.classification_breakdown.group }}</div>
+                  <div class="stat-caption">Proximity &lt; 120px + Coordinated</div>
+                </div>
+
+                <div class="stat-card">
+                  <div class="stat-top">
+                    <span class="stat-tag tag-walk">Normal Walking</span>
+                    <span class="stat-icon">🚶</span>
+                  </div>
+                  <div class="stat-number accent-green">{{ videoStatus.classification_breakdown.walking }}</div>
+                  <div class="stat-caption">Standard pedestrian trajectory</div>
+                </div>
+
+                <div class="stat-card">
+                  <div class="stat-top">
+                    <span class="stat-tag tag-still">Stationary</span>
+                    <span class="stat-icon">🧍</span>
+                  </div>
+                  <div class="stat-number accent-blue">{{ videoStatus.classification_breakdown.stationary }}</div>
+                  <div class="stat-caption">Low-velocity observation</div>
+                </div>
+
+                <div class="stat-card">
+                  <div class="stat-top">
+                    <span class="stat-tag tag-fusion">Camera Fusion</span>
+                    <span class="stat-icon">🏷️</span>
+                  </div>
+                  <div class="stat-number accent-purple">{{ videoStatus.classification_breakdown.fusion_overlap }}</div>
+                  <div class="stat-caption">Cross-verified overlap frames</div>
+                </div>
+
+                <div class="stat-card">
+                  <div class="stat-top">
+                    <span class="stat-tag tag-vehicle">Filtered Vehicles</span>
+                    <span class="stat-icon">🚗</span>
+                  </div>
+                  <div class="stat-number accent-gray">{{ videoStatus.classification_breakdown.non_threat_objects }}</div>
+                  <div class="stat-caption">Non-threat heat signatures</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- CONFIRMED ALERTS INCIDENTS -->
+            <div class="section-block" *ngIf="videoStatus.confirmed_alerts && videoStatus.confirmed_alerts.length > 0">
+              <div class="section-title-clean">
+                Confirmed Alert Incidents ({{ videoStatus.confirmed_alerts.length }})
+                <span class="subtitle-hint">Click any alert card to seek directly to the event in the video</span>
+              </div>
+
+              <div class="alert-cards-grid">
+                <div class="incident-card" *ngFor="let alert of videoStatus.confirmed_alerts"
+                     [class.selected]="selectedAlert?.alert_id === alert.alert_id"
+                     (click)="jumpToAlert(alert)">
+                  <div class="incident-badge">
+                    <span class="time-label">{{ alert.start_time_formatted }}</span>
+                  </div>
+                  <div class="incident-content">
+                    <div class="incident-row">
+                      <span class="incident-title">Target #{{ alert.track_id }}</span>
+                      <span class="incident-tag" [class.critical]="alert.severity === 'CRITICAL'">{{ alert.severity }}</span>
+                    </div>
+                    <div class="incident-detail">
+                      Detected <strong>{{ alert.behavior }}</strong>
+                      <span class="zone-pill" *ngIf="alert.cam_tag">Zone {{ alert.cam_tag }}</span>
+                    </div>
+                    <div class="incident-meta">
+                      Suspicion score {{ (alert.suspicion * 100).toFixed(0) }}% &bull; Sustained {{ alert.duration_frames }} frames
+                    </div>
+                  </div>
+                  <div class="incident-action">
+                    <span class="jump-pill">Seek ↗</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- TARGET ROSTER TABLE -->
+            <div class="section-block" *ngIf="videoStatus.tracked_entities && videoStatus.tracked_entities.length > 0">
+              <div class="section-header-flex">
+                <div class="section-title-clean">Tracked Target Log ({{ videoStatus.tracked_entities.length }})</div>
+                <div class="roster-segmented">
+                  <button class="sub-segment" [class.active]="entityFilter === 'all'" (click)="entityFilter = 'all'">All ({{ videoStatus.tracked_entities.length }})</button>
+                  <button class="sub-segment" [class.active]="entityFilter === 'alerts'" (click)="entityFilter = 'alerts'">Alerts Only</button>
+                  <button class="sub-segment" [class.active]="entityFilter === 'fusion'" (click)="entityFilter = 'fusion'">Fusion [A+B]</button>
+                </div>
+              </div>
+
+              <div class="apple-table-wrap">
+                <table class="apple-table">
+                  <thead>
+                    <tr>
+                      <th>Target</th>
+                      <th>Status</th>
+                      <th>Dominant Behavior</th>
+                      <th>Suspicion Rating</th>
+                      <th>Camera Zone</th>
+                      <th>Time in View</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let entity of filteredEntities"
+                        [class.highlight-row]="entity.confirmed_alert"
+                        [class.active-row]="selectedEntity?.track_id === entity.track_id">
+                      <td class="cell-id">#{{ entity.track_id }}</td>
+                      <td>
+                        <span class="status-badge" [class.badge-alert]="entity.confirmed_alert" [class.badge-safe]="!entity.confirmed_alert">
+                          {{ entity.confirmed_alert ? 'Alert' : 'Normal' }}
+                        </span>
+                      </td>
+                      <td class="cell-behavior">{{ entity.dominant_behavior }}</td>
+                      <td>
+                        <div class="meter-container">
+                          <div class="meter-bar">
+                            <div class="meter-fill" [style.width.%]="entity.max_suspicion * 100" [class.high]="entity.max_suspicion >= 0.5"></div>
+                          </div>
+                          <span class="meter-val">{{ entity.max_suspicion_pct }}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="zone-tag" *ngFor="let tag of entity.camera_tags" [class.fused]="tag === 'A+B'">
+                          {{ tag }}
+                        </span>
+                      </td>
+                      <td class="cell-time">{{ entity.first_seen_formatted }} &rarr; {{ entity.last_seen_formatted }} ({{ entity.duration_sec }}s)</td>
+                      <td>
+                        <button class="cell-seek-btn" (click)="jumpToEntity(entity)">
+                          Jump ↗
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB: STILL IMAGE ==================== -->
+    <section *ngIf="activeTab === 'image'" class="view-section">
+      <div class="content-grid">
+        <div class="card control-sidebar">
+          <div class="card-title-group">
+            <h2 class="card-title">Image Detection</h2>
+            <p class="card-subtitle">Upload a single thermal frame to detect humans, vehicles, and thermal heat signatures.</p>
+          </div>
+
+          <div class="form-item">
+            <label class="control-label">Thermal Frame</label>
+            <div class="upload-dropzone" (drop)="onImageDrop($event)" (dragover)="onDragOver($event)">
+              <input type="file" id="imageInput" accept="image/jpeg,image/png,image/jpg" (change)="onImageFileSelected($event)">
+              <label for="imageInput" class="dropzone-label">
+                <div class="upload-icon-circle">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                </div>
+                <div class="upload-text">
+                  <span class="upload-highlight" *ngIf="!imageFile">Select image</span>
+                  <span *ngIf="!imageFile"> or drop file here</span>
+                  <span class="selected-filename" *ngIf="imageFile">{{ imageFile.name }}</span>
+                </div>
+                <div class="upload-hint">JPG, PNG, or WebP</div>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-item">
+            <div class="slider-label-row">
+              <label class="control-label">Confidence Threshold</label>
+              <span class="slider-badge">{{ (imageConfidence * 100).toFixed(0) }}%</span>
+            </div>
+            <input type="range" class="apple-slider" min="0.05" max="0.95" step="0.05" [(ngModel)]="imageConfidence">
+          </div>
+
+          <div class="form-item">
+            <label class="apple-switch-row">
+              <input type="checkbox" [(ngModel)]="imageApplyClahe">
+              <span class="switch-ui"></span>
+              <span class="switch-label">Apply CLAHE Contrast Equalization</span>
+            </label>
+          </div>
+
+          <button class="apple-primary-btn" [disabled]="!imageFile || imageLoading" (click)="processImage()">
+            <span *ngIf="!imageLoading">Analyze Frame</span>
+            <span *ngIf="imageLoading" class="btn-loader-wrap">
+              <span class="apple-spinner"></span> Processing...
+            </span>
+          </button>
+
+          <div *ngIf="imageError" class="apple-error-banner">
+            {{ imageError }}
+          </div>
+        </div>
+
+        <div class="card results-panel">
+          <div class="panel-header-row">
+            <div>
+              <h3 class="panel-heading">Detection Canvas</h3>
+              <p class="panel-sub">Visual bounding boxes & object confidence scores</p>
+            </div>
+            <div class="status-indicator-badge success" *ngIf="imageResult">
+              {{ imageResult.person_count }} Person(s) Detected
+            </div>
+          </div>
+
+          <div *ngIf="!imagePreview && !imageResult" class="apple-empty-state">
+            <div class="empty-icon-wrap">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+            </div>
+            <h4>No Frame Loaded</h4>
+            <p>Select or drag a thermal image to inspect object classifications.</p>
+          </div>
+
+          <div *ngIf="imagePreview || imageResult" class="image-viewer-container">
+            <img [src]="imageResult ? imageResult.annotated_image : imagePreview" class="displayed-image" alt="Thermal Frame">
+          </div>
+
+          <div *ngIf="imageResult" class="image-metrics-row">
+            <div class="metric-pill-card">
+              <div class="pill-number accent-red">{{ imageResult.person_count }}</div>
+              <div class="pill-name">Persons</div>
+            </div>
+            <div class="metric-pill-card">
+              <div class="pill-number accent-gray">{{ imageResult.other_detections.length }}</div>
+              <div class="pill-name">Filtered Objects</div>
+            </div>
+            <div class="metric-pill-card">
+              <div class="pill-number accent-blue">{{ imageResult.total_detections }}</div>
+              <div class="pill-name">Total Detections</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB: LIVE CAMERA ==================== -->
+    <section *ngIf="activeTab === 'live'" class="view-section">
+      <div class="content-grid">
+        <div class="card control-sidebar">
+          <div class="card-title-group">
+            <h2 class="card-title">Live Sentry</h2>
+            <p class="card-subtitle">Low-latency webcam stream with real-time kinematic centroid tracking and proximity surge detection.</p>
+          </div>
+
+          <div class="form-item">
+            <div class="slider-label-row">
+              <label class="control-label">Detection Confidence</label>
+              <span class="slider-badge">{{ (liveConfidence * 100).toFixed(0) }}%</span>
+            </div>
+            <input type="range" class="apple-slider" min="0.20" max="0.90" step="0.05" [(ngModel)]="liveConfidence">
+          </div>
+
+          <button class="apple-primary-btn" [class.danger-btn]="liveActive" (click)="toggleLiveCamera()">
+            {{ liveActive ? 'Stop Camera Feed' : 'Start Camera Feed' }}
+          </button>
+
+          <div *ngIf="liveError" class="apple-error-banner">
+            {{ liveError }}
+          </div>
+
+          <div class="fusion-card-apple">
+            <div class="fusion-header">
+              <span class="fusion-dot green"></span>
+              <span class="fusion-heading">Real-Time Classification</span>
+            </div>
+            <p class="fusion-body">
+              <strong>Red:</strong> Fast motion, crouching aspect drop, or group surges.<br>
+              <strong>Amber:</strong> Normal walking trajectory.<br>
+              <strong>Green:</strong> Stationary observation.
+            </p>
+          </div>
+        </div>
+
+        <div class="card results-panel">
+          <div class="panel-header-row">
+            <div>
+              <h3 class="panel-heading">Live Camera Feed</h3>
+              <p class="panel-sub">Streaming low-latency inference over WebSocket</p>
+            </div>
+            <div class="status-indicator-badge live-pulsing" *ngIf="liveActive">
+              Live Stream Active
+            </div>
+          </div>
+
+          <video #webcamVideo class="hidden-element" playsinline muted></video>
+          <canvas #captureCanvas class="hidden-element"></canvas>
+
+          <div *ngIf="!liveActive" class="apple-empty-state">
+            <div class="empty-icon-wrap">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 7l-7 5 7 5V7z"/>
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+              </svg>
+            </div>
+            <h4>Camera Feed Inactive</h4>
+            <p>Click "Start Camera Feed" on the left to begin real-time surveillance.</p>
+          </div>
+
+          <div *ngIf="liveActive" class="live-player-container">
+            <img *ngIf="liveAnnotatedImage" [src]="liveAnnotatedImage" class="live-image" alt="Live Stream">
+            <div *ngIf="!liveAnnotatedImage" class="connecting-live">
+              <span class="apple-spinner"></span> Initializing video feed...
+            </div>
+          </div>
+
+          <div *ngIf="liveActive && liveTelemetry" class="image-metrics-row">
+            <div class="metric-pill-card">
+              <div class="pill-number accent-blue">{{ liveTelemetry.active_persons }}</div>
+              <div class="pill-name">Tracked Persons</div>
+            </div>
+            <div class="metric-pill-card">
+              <div class="pill-number accent-red">{{ liveTelemetry.threat_count }}</div>
+              <div class="pill-name">Active Threats</div>
+            </div>
+            <div class="metric-pill-card">
+              <div class="pill-number accent-gray">{{ liveTelemetry.other_objects }}</div>
+              <div class="pill-name">Objects</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
